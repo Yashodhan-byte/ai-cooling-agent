@@ -1,7 +1,7 @@
 """
-Streamlit Dashboard — AI Battery Cooling Agent  ✦ Mission Control Pro v3.0
-===========================================================================
-Run:  python3 -m streamlit run app.py
+Streamlit Dashboard — AI Battery Cooling Agent  ✦ Mission Control Ultimate v4.0
+================================================================================
+Run:  cd /Users/aadi/Downloads/ai-cooling-agent && python3 -m streamlit run app.py
 """
 
 import os
@@ -24,7 +24,7 @@ import streamlit as st
 # Page config
 # ──────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="🔋 AI Battery Cooling Agent — Mission Control Pro",
+    page_title="🔋 AI Battery Cooling Agent — Mission Control Ultimate",
     page_icon="🔋",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -39,35 +39,33 @@ T_MAX    = 45.0
 FLOW_MIN = 0.5
 FLOW_MAX = 10.0
 
-BG       = "#080c16"
-SURFACE  = "#0e1526"
-CARD     = "#121b33"
-CARD2    = "#182442"
-BORDER   = "#223154"
+BG       = "#070b14"
+SURFACE  = "#0d1322"
+CARD     = "#11182c"
+CARD2    = "#162038"
+BORDER   = "#1e2b48"
 ACCENT   = "#6366f1"   # Indigo
 ACCENT2  = "#8b5cf6"   # Violet
 CYAN     = "#06b6d4"   # Coolant Cyan
 GREEN    = "#10b981"   # Emerald Safe
 AMBER    = "#f59e0b"   # Warning Amber
 RED      = "#ef4444"   # Critical Rose
-PURPLE   = "#a855f7"
 TEXT     = "#f1f5f9"
 MUTED    = "#94a3b8"
 
 C_NONE   = "#ef4444"
 C_FIXED  = "#f59e0b"
 C_AGENT  = "#10b981"
-PANEL_BG = "#0e1526"
-GRID_CLR = "#1e2c4c"
+PANEL_BG = "#0d1322"
+GRID_CLR = "#1a253e"
 TEXT_CLR = "#f1f5f9"
 
-# Pump power model constants: P_pump = alpha * (flow_rate)^1.8
 PUMP_POWER_COEFF = 2.4   # Watts per (L/min)^1.8
 
 def calc_pump_power(flow_lpm: float) -> float:
     return PUMP_POWER_COEFF * (flow_lpm ** 1.8)
 
-# ── Global CSS ───────────────────────────────────────────────────
+# ── CSS ───────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
@@ -83,7 +81,7 @@ html, body, [class*="css"] {{
 ::-webkit-scrollbar-thumb {{ background: {BORDER}; border-radius: 3px; }}
 
 [data-testid="stSidebar"] {{
-    background: linear-gradient(180deg, #090f1d 0%, #050811 100%);
+    background: linear-gradient(180deg, #090e1b 0%, #040710 100%);
     border-right: 1px solid {BORDER};
 }}
 
@@ -107,11 +105,27 @@ html, body, [class*="css"] {{
     border-color: rgba(255,255,255,0.35);
 }}
 
-/* Emergency Scram Button */
-.btn-emergency > button {{
-    background: linear-gradient(135deg, #dc2626, #ef4444) !important;
-    border-color: rgba(239,68,68,0.5) !important;
-    box-shadow: 0 4px 18px rgba(239,68,68,0.4) !important;
+/* Quick Presets Bar */
+.preset-container {{
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}}
+.preset-btn {{
+    background: {CARD};
+    border: 1px solid {BORDER};
+    border-radius: 10px;
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: {TEXT};
+    cursor: pointer;
+    transition: all 0.2s;
+}}
+.preset-btn:hover {{
+    background: {CARD2};
+    border-color: {CYAN};
 }}
 
 /* Metric Cards */
@@ -119,7 +133,7 @@ html, body, [class*="css"] {{
     background: linear-gradient(145deg, {CARD} 0%, {CARD2} 100%);
     border: 1px solid {BORDER};
     border-radius: 16px;
-    padding: 18px 16px 14px;
+    padding: 16px 14px 12px;
     text-align: center;
     box-shadow: 0 6px 24px rgba(0,0,0,0.35);
     transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s;
@@ -132,7 +146,7 @@ html, body, [class*="css"] {{
     top: 0; left: 0; right: 0;
     height: 3px;
     background: linear-gradient(90deg, {CYAN}, {ACCENT}, {GREEN});
-    opacity: 0.8;
+    opacity: 0.85;
 }}
 .metric-card:hover {{
     transform: translateY(-3px);
@@ -140,7 +154,7 @@ html, body, [class*="css"] {{
     border-color: rgba(99,102,241,0.4);
 }}
 .metric-value {{
-    font-size: 1.85rem;
+    font-size: 1.75rem;
     font-weight: 800;
     line-height: 1.1;
     margin-bottom: 4px;
@@ -148,19 +162,19 @@ html, body, [class*="css"] {{
     letter-spacing: -0.5px;
 }}
 .metric-label {{
-    font-size: 0.68rem;
+    font-size: 0.65rem;
     color: {MUTED};
     text-transform: uppercase;
-    letter-spacing: 1.5px;
+    letter-spacing: 1.4px;
     font-weight: 600;
 }}
 .metric-sub {{
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     color: {MUTED};
-    margin-top: 5px;
+    margin-top: 4px;
     font-family: 'JetBrains Mono', monospace;
 }}
-.metric-icon {{ font-size: 1.35rem; margin-bottom: 4px; display: block; }}
+.metric-icon {{ font-size: 1.25rem; margin-bottom: 2px; display: block; }}
 
 /* Progress Bar */
 .prog-container {{
@@ -185,7 +199,7 @@ html, body, [class*="css"] {{
     background: {CARD};
     border: 1px solid {BORDER};
     border-radius: 14px;
-    padding: 16px;
+    padding: 15px;
     margin-bottom: 12px;
 }}
 .gauge-bar-bg {{
@@ -203,27 +217,27 @@ html, body, [class*="css"] {{
     transition: width 0.4s ease;
 }}
 
-/* 3D Cell Matrix Grid */
+/* 8-Cell Battery Module Grid */
 .cell-grid {{
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
+    gap: 10px;
     margin: 12px 0;
 }}
 .cell-item {{
     background: {CARD};
     border: 1px solid {BORDER};
-    border-radius: 10px;
-    padding: 10px 8px;
+    border-radius: 12px;
+    padding: 12px 10px;
     text-align: center;
     transition: all 0.25s ease;
 }}
 .cell-item:hover {{
-    transform: scale(1.04);
+    transform: scale(1.03);
     border-color: {CYAN};
 }}
 .cell-temp {{
-    font-size: 1.05rem;
+    font-size: 1.15rem;
     font-weight: 800;
     font-family: 'JetBrains Mono', monospace;
 }}
@@ -305,6 +319,11 @@ html, body, [class*="css"] {{
     border: 1px solid rgba(16,185,129,0.35);
     box-shadow: 0 0 10px rgba(16,185,129,0.2);
 }}
+.badge-pause {{
+    background: rgba(245,158,11,0.15);
+    color: {AMBER};
+    border: 1px solid rgba(245,158,11,0.35);
+}}
 .badge-idle {{
     background: rgba(148,163,184,0.12);
     color: {MUTED};
@@ -350,6 +369,18 @@ html, body, [class*="css"] {{
     gap: 8px;
 }}
 
+/* Quick-help pill */
+.help-box {{
+    background: rgba(99,102,241,0.06);
+    border: 1px solid {BORDER};
+    border-radius: 12px;
+    padding: 14px;
+    margin-top: 14px;
+    font-size: 0.78rem;
+    color: {MUTED};
+    line-height: 1.6;
+}}
+
 hr {{ border: none; border-top: 1px solid {BORDER}; margin: 18px 0; }}
 #MainMenu, footer, header {{ visibility: hidden; }}
 .stDeployButton {{ display: none; }}
@@ -367,12 +398,12 @@ def init_session():
 
     defaults = dict(
         sim_agent=None, sim_none=None, sim_fixed=None,
-        running=False, step=0, flow_agent=FLOW_MIN, memory=[],
+        running=False, paused=False, step=0, flow_agent=FLOW_MIN, memory=[],
         agent_temps=[], none_temps=[], fixed_temps=[],
         agent_flows=[], times=[], heat_loads=[],
         q_cool_agent=[], q_cool_fixed=[],
         pump_power_agent=[], pump_power_fixed=[],
-        cell_temps=[], # 8-cell module array
+        cell_temps=[],
         scram_active=False,
         violations_a=0, violations_n=0, violations_f=0,
         n_steps=100, fixed_flow=5.0, T_init=25.0,
@@ -404,6 +435,7 @@ def reset_simulation(n_steps, fixed_flow, T_init, nano_pct=1.0):
     st.session_state.pump_power_fixed   = []
     st.session_state.cell_temps         = []
     st.session_state.scram_active       = False
+    st.session_state.paused             = False
     st.session_state.violations_a       = 0
     st.session_state.violations_n       = 0
     st.session_state.violations_f       = 0
@@ -468,7 +500,6 @@ def advance_one_step(profile="Dynamic Cycle", mode="Balanced Autonomous"):
     hl = get_heat_load(float(t), profile)
     nano = s.nano_pct
 
-    # Emergency SCRAM override
     if s.scram_active:
         flow_new = FLOW_MAX
         pred_t = T_MAX
@@ -481,15 +512,12 @@ def advance_one_step(profile="Dynamic Cycle", mode="Balanced Autonomous"):
     T_a = rec_a["temperature"]
     s.flow_agent = flow_new
 
-    # Baselines
     rec_n = s.sim_none.step(hl, FLOW_MIN, nano)
     rec_f = s.sim_fixed.step(hl, s.fixed_flow, nano)
 
     p_agent = calc_pump_power(flow_new)
     p_fixed = calc_pump_power(s.fixed_flow)
 
-    # 8-cell module thermal gradient generator
-    # Center cells run slightly hotter due to lower edge heat dissipation
     offsets = [-0.9, -0.4, 0.5, 1.1, 1.2, 0.4, -0.3, -0.8]
     rng_jitter = np.random.normal(0, 0.15, 8)
     cell_temps_now = [round(T_a + offsets[i] + rng_jitter[i], 1) for i in range(8)]
@@ -520,7 +548,7 @@ def advance_one_step(profile="Dynamic Cycle", mode="Balanced Autonomous"):
     s.step += 1
 
 
-# ── Visual Helpers ────────────────────────────────────────────────
+# ── Chart styling helpers ─────────────────────────────────────────
 def _style_ax(ax, fig=None):
     ax.set_facecolor(PANEL_BG)
     if fig:
@@ -662,7 +690,7 @@ def render_sidebar():
                 AI Cooling Agent
             </div>
             <div style="font-size:0.72rem; color:{CYAN}; font-weight:600; margin-top:2px;">
-                ✦ MISSION CONTROL PRO v3.0
+                ✦ MISSION CONTROL ULTIMATE v4.0
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -712,33 +740,35 @@ def render_sidebar():
         n_steps    = st.slider("Total Time Steps (s)", 20, 250, 100, 10)
         T_init     = st.slider("Initial Temperature (°C)", 15.0, 42.0, 25.0, 0.5)
         fixed_flow = st.slider("Fixed Baseline Flow (L/min)", 0.5, 10.0, 5.0, 0.5)
-        speed_ms   = st.slider("Simulation Throttle (ms)", 0, 300, 40, 10,
+        speed_ms   = st.slider("Simulation Throttle (ms)", 0, 300, 30, 10,
                                help="Delay between frames for smooth visualization")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            start    = st.button("▶ Run Agent", use_container_width=True, key="btn_start")
-        with col2:
-            stop_btn = st.button("↺ Reset All", use_container_width=True, key="btn_reset")
+        # Control Action Buttons
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            start = st.button("▶ Start", use_container_width=True, key="btn_start")
+        with col_btn2:
+            pause_label = "▶ Resume" if st.session_state.get("paused", False) else "⏸ Pause"
+            pause_btn = st.button(pause_label, use_container_width=True, key="btn_pause")
 
-        st.markdown(f'<div class="section-header">🚨 Safety Override</div>', unsafe_allow_html=True)
-        scram_col = st.container()
-        with scram_col:
-            scram = st.button("🚨 EMERGENCY SCRAM (10 L/m)", use_container_width=True, key="btn_scram")
+        col_rst1, col_rst2 = st.columns(2)
+        with col_rst1:
+            stop_btn = st.button("↺ Reset All", use_container_width=True, key="btn_reset")
+        with col_rst2:
+            scram = st.button("🚨 SCRAM", use_container_width=True, key="btn_scram")
             if scram:
                 st.session_state.scram_active = True
 
         st.markdown(f"""
-        <div style="background:rgba(99,102,241,0.06); border:1px solid {BORDER}; border-radius:12px;
-                    padding:12px; margin-top:16px; font-size:0.75rem; color:{MUTED}; line-height:1.6;">
-            <b style="color:{TEXT};">Physics Principles:</b><br>
-            • <code style="color:{CYAN};">dT/dt = (Q_in - Q_out) / C_eff</code><br>
-            • Nanofluid thermal capacity boost<br>
-            • Hydraulic cubic pump dissipation
+        <div class="help-box">
+            <b style="color:{TEXT};">Quick Usage:</b><br>
+            • Click <b>▶ Start</b> to launch real-time simulation.<br>
+            • Use <b>⏸ Pause</b> to inspect graphs at any step.<br>
+            • Hit <b>🚨 SCRAM</b> for instant maximum emergency cooling.
         </div>
         """, unsafe_allow_html=True)
 
-    return n_steps, T_init, fixed_flow, speed_ms, start, stop_btn, nano_pct, profile, control_mode
+    return n_steps, T_init, fixed_flow, speed_ms, start, pause_btn, stop_btn, nano_pct, profile, control_mode
 
 
 # ── Main ──────────────────────────────────────────────────────────
@@ -746,16 +776,21 @@ def main():
     init_session()
     s = st.session_state
 
-    n_steps, T_init, fixed_flow, speed_ms, start, stop_btn, nano_pct, profile, control_mode = render_sidebar()
+    n_steps, T_init, fixed_flow, speed_ms, start, pause_btn, stop_btn, nano_pct, profile, control_mode = render_sidebar()
 
     if start:
         reset_simulation(n_steps, fixed_flow, T_init, nano_pct)
         st.session_state.profile = profile
         st.session_state.control_mode = control_mode
         st.session_state.running = True
+        st.session_state.paused = False
+
+    if pause_btn:
+        st.session_state.paused = not st.session_state.paused
 
     if stop_btn:
         st.session_state.running = False
+        st.session_state.paused = False
         reset_simulation(n_steps, fixed_flow, T_init, nano_pct)
 
     step_now    = s.step
@@ -773,7 +808,9 @@ def main():
     )
 
     if s.scram_active:
-        badge = f'<span class="badge badge-scram">⚠️ SCRAM MAX COOLING ACTIVE</span>'
+        badge = f'<span class="badge badge-scram">⚠️ SCRAM EMERGENCY COOLING ACTIVE</span>'
+    elif s.paused:
+        badge = f'<span class="badge badge-pause">⏸ Paused at Step {step_now}</span>'
     elif s.running:
         badge = f'<span class="badge badge-run">● Agent Active</span>'
     elif step_now > 0 and not s.running:
@@ -844,12 +881,13 @@ def main():
         """, unsafe_allow_html=True)
 
     # ── Tabs Navigation ───────────────────────────────────────────
-    tab_live, tab_pack, tab_telemetry, tab_analytics, tab_memory, tab_export = st.tabs([
+    tab_live, tab_pack, tab_telemetry, tab_analytics, tab_memory, tab_guide, tab_export = st.tabs([
         "📡 Live Dashboard",
         "🔋 Pack Cell Matrix",
         "⚡ Energy & Telemetry",
         "📊 Comparative Benchmark",
         "🧠 Agent Memory & Decisions",
+        "📖 Architecture & Guide",
         "💾 Data Export & Reports"
     ])
 
@@ -927,12 +965,12 @@ def main():
                 </div>
                 <div style="font-size:0.85rem; color:{MUTED}; max-width:440px; margin:0 auto 20px auto;">
                     Select your thermal profile and parameters in the sidebar, then click
-                    <b style="color:{CYAN};">▶ Run Agent</b> to initiate real-time telemetry.
+                    <b style="color:{CYAN};">▶ Start</b> to initiate real-time telemetry.
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-    # ── Tab 2: Pack Cell Matrix (NEW FEATURE) ─────────────────────
+    # ── Tab 2: Pack Cell Matrix ───────────────────────────────────
     with tab_pack:
         st.markdown(f'<div class="section-header">🔋 8-Cell Battery Module Spatial Heat Distribution</div>', unsafe_allow_html=True)
         if s.cell_temps:
@@ -1124,7 +1162,39 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-    # ── Tab 6: Data Export & Reports ──────────────────────────────
+    # ── Tab 6: Architecture & Guide (NEW BUILT-IN GUIDE) ───────────
+    with tab_guide:
+        st.markdown(f'<div class="section-header">📖 Embedded System Architecture & Theory</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:{CARD}; border:1px solid {BORDER}; border-radius:16px; padding:24px; line-height:1.7;">
+            <h3 style="color:{CYAN}; margin-top:0;">🔋 How the AI Cooling Agent Operates</h3>
+            <p style="color:{TEXT}; font-size:0.9rem;">
+                This system autonomously regulates an Electric Vehicle (EV) battery pack's thermal dynamics using a closed-loop predictive AI pipeline:
+            </p>
+            <ol style="color:{MUTED}; font-size:0.85rem;">
+                <li><b style="color:{TEXT};">State Observation:</b> Every second, temperature (T), scheduled electrical heat load (W), and ambient conditions are gathered.</li>
+                <li><b style="color:{TEXT};">Neural Surrogate Inference:</b> An ML surrogate model (GradientBoostingRegressor) predicts the next-step temperature in under 1 millisecond.</li>
+                <li><b style="color:{TEXT};">Headroom & Urgency Evaluation:</b> The agent calculates distance to the 45°C critical limit and computes an urgency coefficient.</li>
+                <li><b style="color:{TEXT};">Adaptive Actuation:</b> Commands variable coolant flow (0.5 – 10.0 L/min), cutting parasitic pump energy during low loads while safeguarding against thermal runaway.</li>
+            </ol>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+                <div style="background:{SURFACE}; border:1px solid {BORDER}; border-radius:12px; padding:14px;">
+                    <b style="color:{GREEN};">🛡️ Safety Limits</b><br>
+                    • Safe Operating Range: 15°C – 42°C<br>
+                    • Warning Range: 42°C – 45°C<br>
+                    • Critical Runaway Risk: &gt; 45°C
+                </div>
+                <div style="background:{SURFACE}; border:1px solid {BORDER}; border-radius:12px; padding:14px;">
+                    <b style="color:{CYAN};">⚡ Energy Optimization</b><br>
+                    • Parasitic Hydraulic Power: P ∝ Flow<sup>1.8</sup><br>
+                    • Nanofluid thermal capacity boost: +1.5% per 1% nano<br>
+                    • 30%–50% parasitic energy reduction vs fixed flow
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Tab 7: Data Export & Reports ──────────────────────────────
     with tab_export:
         st.markdown(f'<div class="section-header">💾 Export Simulation Telemetry</div>', unsafe_allow_html=True)
         if s.times:
@@ -1151,7 +1221,7 @@ def main():
             st.info("Execute a simulation to export dataset.", icon="💾")
 
     # ── Autonomous Simulation Execution Loop ─────────────────────
-    if s.running and step_now < total_steps:
+    if s.running and not s.paused and step_now < total_steps:
         advance_one_step(profile=s.get("profile", profile), mode=s.get("control_mode", control_mode))
         if speed_ms > 0:
             time.sleep(speed_ms / 1000.0)
