@@ -1,5 +1,5 @@
 """
-Streamlit Dashboard — AI Battery Cooling Agent  ✦ Mission Control Ultimate v4.0
+Streamlit Dashboard — AI Battery Cooling Agent  ✦ Mission Control Ultimate v5.0
 ================================================================================
 Run:  cd /Users/aadi/Downloads/ai-cooling-agent && python3 -m streamlit run app.py
 """
@@ -8,6 +8,7 @@ import os
 import sys
 import time
 import math
+import json
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -103,29 +104,6 @@ html, body, [class*="css"] {{
     transform: translateY(-2px);
     box-shadow: 0 8px 25px rgba(99,102,241,0.5);
     border-color: rgba(255,255,255,0.35);
-}}
-
-/* Quick Presets Bar */
-.preset-container {{
-    display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-}}
-.preset-btn {{
-    background: {CARD};
-    border: 1px solid {BORDER};
-    border-radius: 10px;
-    padding: 6px 14px;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: {TEXT};
-    cursor: pointer;
-    transition: all 0.2s;
-}}
-.preset-btn:hover {{
-    background: {CARD2};
-    border-color: {CYAN};
 }}
 
 /* Metric Cards */
@@ -369,7 +347,6 @@ html, body, [class*="css"] {{
     gap: 8px;
 }}
 
-/* Quick-help pill */
 .help-box {{
     background: rgba(99,102,241,0.06);
     border: 1px solid {BORDER};
@@ -405,6 +382,8 @@ def init_session():
         pump_power_agent=[], pump_power_fixed=[],
         cell_temps=[],
         scram_active=False,
+        openai_key_input="",
+        llm_reasoning_log=[],
         violations_a=0, violations_n=0, violations_f=0,
         n_steps=100, fixed_flow=5.0, T_init=25.0,
         nano_pct=1.0, profile="Dynamic Cycle",
@@ -434,6 +413,7 @@ def reset_simulation(n_steps, fixed_flow, T_init, nano_pct=1.0):
     st.session_state.pump_power_agent   = []
     st.session_state.pump_power_fixed   = []
     st.session_state.cell_temps         = []
+    st.session_state.llm_reasoning_log  = []
     st.session_state.scram_active       = False
     st.session_state.paused             = False
     st.session_state.violations_a       = 0
@@ -466,22 +446,60 @@ def get_heat_load(t: float, profile: str) -> float:
     return heat_load_schedule(t)
 
 
-# ── Multi-Agent Tuning Logic ─────────────────────────────────────
-def agent_decide(T_current, heat_load, current_flow, model, nano_pct, mode="Balanced Autonomous"):
+# ── Agent Decision: Neural ML vs Optional LLM ────────────────────
+def call_optional_llm(api_key: str, T_current: float, T_pred: float, heat_load: float, current_flow: float) -> tuple[float, str]:
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        prompt = f"""You are an autonomous thermal cooling agent for an EV battery.
+Current state:
+- Temperature: {T_current:.1f}°C
+- Predicted next temp: {T_pred:.1f}°C
+- Heat dissipation: {heat_load:.0f} W
+- Safe range: 15°C to 45°C
+- Allowable flow: 0.5 to 10.0 L/min
+
+Provide target coolant flow rate and a 1-sentence rationale in JSON format:
+{{"flow_rate": <number>, "reason": "<rationale>"}}"""
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+            max_tokens=80,
+        )
+        data = json.loads(resp.choices[0].message.content)
+        flow = float(data.get("flow_rate", 5.0))
+        reason = data.get("reason", "LLM reasoning executed")
+        return max(FLOW_MIN, min(FLOW_MAX, flow)), reason
+    except Exception as e:
+        return None, str(e)
+
+
+def agent_decide(T_current, heat_load, current_flow, model, nano_pct, mode="Balanced Autonomous", api_key=""):
     T_pred = predict_next_temp(model, T_current, heat_load, current_flow, nano_pct)
     headroom = T_MAX - T_pred
+    rationale = "Neural predictive headroom control"
+
+    if api_key and len(api_key.strip()) > 10:
+        llm_flow, llm_reason = call_optional_llm(api_key.strip(), T_current, T_pred, heat_load, current_flow)
+        if llm_flow is not None:
+            return round(llm_flow, 2), T_pred, f"🤖 GPT-4o-mini: {llm_reason}"
 
     if mode == "Aggressive Safety (Zero-Tolerance)":
         target_max = 42.0
         headroom = target_max - T_pred
         urgency = 1.0 - headroom / (target_max - T_MIN)
         urgency = max(0.0, min(1.0, urgency)) * 1.3
+        rationale = "Zero-tolerance safety guard (42°C ceiling)"
     elif mode == "Eco / Range-Saver (Energy Minimization)":
         urgency = 1.0 - headroom / (T_MAX - T_MIN)
         urgency = max(0.0, min(1.0, urgency)) * 0.75
+        rationale = "Parasitic power minimization mode"
     else:  # Balanced Autonomous
         urgency = 1.0 - headroom / (T_MAX - T_MIN)
         urgency = max(0.0, min(1.0, urgency))
+        rationale = "Autonomous dynamic proportional throttling"
 
     urgency = max(0.0, min(1.0, urgency))
     flow_new = FLOW_MIN + urgency * (FLOW_MAX - FLOW_MIN)
@@ -489,12 +507,13 @@ def agent_decide(T_current, heat_load, current_flow, model, nano_pct, mode="Bala
 
     if T_pred2 > T_MAX:
         flow_new = FLOW_MAX
+        rationale = "Safety override: Max flow engaged"
 
-    return round(max(FLOW_MIN, min(FLOW_MAX, flow_new)), 2), T_pred
+    return round(max(FLOW_MIN, min(FLOW_MAX, flow_new)), 2), T_pred, rationale
 
 
 # ── Advance Step ──────────────────────────────────────────────────
-def advance_one_step(profile="Dynamic Cycle", mode="Balanced Autonomous"):
+def advance_one_step(profile="Dynamic Cycle", mode="Balanced Autonomous", api_key=""):
     s = st.session_state
     t = s.step + 1
     hl = get_heat_load(float(t), profile)
@@ -503,10 +522,11 @@ def advance_one_step(profile="Dynamic Cycle", mode="Balanced Autonomous"):
     if s.scram_active:
         flow_new = FLOW_MAX
         pred_t = T_MAX
+        rationale = "🚨 MANUAL EMERGENCY SCRAM ACTIVE"
     else:
         rec_a = s.sim_agent.step(hl, s.flow_agent, nano)
         T_a = rec_a["temperature"]
-        flow_new, pred_t = agent_decide(T_a, hl, s.flow_agent, s.model, nano, mode)
+        flow_new, pred_t, rationale = agent_decide(T_a, hl, s.flow_agent, s.model, nano, mode, api_key)
 
     rec_a = s.sim_agent.step(hl, flow_new, nano)
     T_a = rec_a["temperature"]
@@ -537,7 +557,7 @@ def advance_one_step(profile="Dynamic Cycle", mode="Balanced Autonomous"):
     s.memory.append({
         "t": t, "T": T_a, "flow": flow_new, "hl": hl,
         "q_cool": rec_a["Q_cool"], "pred_T": pred_t, "power": p_agent,
-        "mode": mode
+        "mode": mode, "rationale": rationale
     })
     if len(s.memory) > 35:
         s.memory = s.memory[-35:]
@@ -690,7 +710,7 @@ def render_sidebar():
                 AI Cooling Agent
             </div>
             <div style="font-size:0.72rem; color:{CYAN}; font-weight:600; margin-top:2px;">
-                ✦ MISSION CONTROL ULTIMATE v4.0
+                ✦ MISSION CONTROL ULTIMATE v5.0
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -704,6 +724,16 @@ def render_sidebar():
             <div style="font-size:0.85rem; font-weight:700; color:{CYAN};">{model_name}</div>
         </div>
         """, unsafe_allow_html=True)
+
+        # Optional OpenAI Key
+        with st.expander("🔑 LLM Reasoner (Optional)", expanded=False):
+            st.markdown(f"""
+            <div style="font-size:0.72rem; color:{MUTED}; margin-bottom:6px;">
+                By default, the agent runs 100% offline using the built-in Machine Learning model. Enter an OpenAI key if you'd like GPT-4o-mini to provide natural language rationales.
+            </div>
+            """, unsafe_allow_html=True)
+            env_key = os.getenv("OPENAI_API_KEY", "")
+            api_key_input = st.text_input("OpenAI API Key", value=env_key, type="password", placeholder="sk-...")
 
         st.markdown(f'<div class="section-header">🎯 Agent Strategy Tuning</div>', unsafe_allow_html=True)
         control_mode = st.selectbox(
@@ -768,7 +798,7 @@ def render_sidebar():
         </div>
         """, unsafe_allow_html=True)
 
-    return n_steps, T_init, fixed_flow, speed_ms, start, pause_btn, stop_btn, nano_pct, profile, control_mode
+    return n_steps, T_init, fixed_flow, speed_ms, start, pause_btn, stop_btn, nano_pct, profile, control_mode, api_key_input
 
 
 # ── Main ──────────────────────────────────────────────────────────
@@ -776,7 +806,7 @@ def main():
     init_session()
     s = st.session_state
 
-    n_steps, T_init, fixed_flow, speed_ms, start, pause_btn, stop_btn, nano_pct, profile, control_mode = render_sidebar()
+    n_steps, T_init, fixed_flow, speed_ms, start, pause_btn, stop_btn, nano_pct, profile, control_mode, api_key_input = render_sidebar()
 
     if start:
         reset_simulation(n_steps, fixed_flow, T_init, nano_pct)
@@ -1140,16 +1170,19 @@ def main():
                     else:
                         cls, icon, tc = "", "🟢 NORMAL", GREEN
 
+                    rat = entry.get("rationale", "Proportional headroom")
+
                     st.markdown(f"""
                     <div class="memory-entry {cls}">
                         <div>
                             <b>t={entry['t']:3d}s</b> &nbsp; {icon} &nbsp;
                             T=<span style="color:{tc}; font-weight:700;">{T_e:5.1f}°C</span>
-                            (Pred: {entry.get('pred_T', T_e):.1f}°C)
+                            (Pred: {entry.get('pred_T', T_e):.1f}°C)<br>
+                            <span style="font-size:0.72rem; color:{MUTED};">{rat}</span>
                         </div>
-                        <div>
+                        <div style="text-align:right;">
                             Flow: <span style="color:{CYAN}; font-weight:700;">{entry['flow']:.2f} L/m</span> &nbsp;
-                            HL: <span style="color:{AMBER};">{entry['hl']:.0f}W</span> &nbsp;
+                            HL: <span style="color:{AMBER};">{entry['hl']:.0f}W</span><br>
                             Power: <span style="color:{MUTED};">{entry.get('power', 0):.1f}W</span>
                         </div>
                     </div>
@@ -1162,7 +1195,7 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-    # ── Tab 6: Architecture & Guide (NEW BUILT-IN GUIDE) ───────────
+    # ── Tab 6: Architecture & Guide ───────────────────────────────
     with tab_guide:
         st.markdown(f'<div class="section-header">📖 Embedded System Architecture & Theory</div>', unsafe_allow_html=True)
         st.markdown(f"""
@@ -1222,7 +1255,11 @@ def main():
 
     # ── Autonomous Simulation Execution Loop ─────────────────────
     if s.running and not s.paused and step_now < total_steps:
-        advance_one_step(profile=s.get("profile", profile), mode=s.get("control_mode", control_mode))
+        advance_one_step(
+            profile=s.get("profile", profile),
+            mode=s.get("control_mode", control_mode),
+            api_key=api_key_input
+        )
         if speed_ms > 0:
             time.sleep(speed_ms / 1000.0)
         if s.step < total_steps:
