@@ -32,7 +32,7 @@ st.set_page_config(
 )
 
 from simulator import BatterySimulator, BatteryConfig, heat_load_schedule
-from train_model import load_model, predict_next_temp
+from train_model import load_model, load_metrics, predict_next_temp
 
 # ── Design tokens ─────────────────────────────────────────────────
 T_MIN    = 15.0
@@ -911,12 +911,13 @@ def main():
         """, unsafe_allow_html=True)
 
     # ── Tabs Navigation ───────────────────────────────────────────
-    tab_live, tab_pack, tab_telemetry, tab_analytics, tab_memory, tab_guide, tab_export = st.tabs([
+    tab_live, tab_pack, tab_telemetry, tab_analytics, tab_memory, tab_ml_eval, tab_guide, tab_export = st.tabs([
         "📡 Live Dashboard",
         "🔋 Pack Cell Matrix",
         "⚡ Energy & Telemetry",
         "📊 Comparative Benchmark",
         "🧠 Agent Memory & Decisions",
+        "🔬 ML Model Validation",
         "📖 Architecture & Guide",
         "💾 Data Export & Reports"
     ])
@@ -1195,7 +1196,74 @@ def main():
             </div>
             """, unsafe_allow_html=True)
 
-    # ── Tab 6: Architecture & Guide ───────────────────────────────
+    # ── Tab 6: ML Model Validation & Academic Rigor ───────────────
+    with tab_ml_eval:
+        st.markdown(f'<div class="section-header">🔬 Surrogate Model 5-Fold Cross-Validation & Benchmark Metrics</div>', unsafe_allow_html=True)
+        try:
+            bundle = load_metrics()
+            best_name = bundle.get("best_model", "GradientBoosting")
+            metrics = bundle.get("metrics", {})
+
+            col_m1, col_m2 = st.columns([1.5, 1])
+
+            with col_m1:
+                st.markdown(f"**Model Selection & 5-Fold K-Fold Cross Validation:**")
+                rows = []
+                for m_name, d in metrics.items():
+                    rows.append({
+                        "Algorithm": m_name,
+                        "Test MAE (°C)": f"{d['mae']:.4f}",
+                        "Test RMSE (°C)": f"{d['rmse']:.4f}",
+                        "Test R²": f"{d['r2']:.4f}",
+                        "5-Fold CV R² (μ ± σ)": f"{d['cv_r2_mean']:.4f} ± {d['cv_r2_std']:.4f}",
+                    })
+                df_models = pd.DataFrame(rows)
+                st.dataframe(df_models, use_container_width=True, hide_index=True)
+
+                # Parity scatter plot
+                best_d = metrics.get(best_name, {})
+                if "sample_actual" in best_d and "sample_pred" in best_d:
+                    fig_par, ax_par = plt.subplots(figsize=(6, 3.2), facecolor=BG)
+                    _style_ax(ax_par, fig_par)
+                    acts = best_d["sample_actual"]
+                    preds = best_d["sample_pred"]
+                    ax_par.scatter(acts, preds, color=CYAN, s=20, alpha=0.7, edgecolors="none", label="Predictions")
+                    mn, mx = min(acts), max(acts)
+                    ax_par.plot([mn, mx], [mn, mx], color=AMBER, ls="--", lw=1.5, label="Perfect Fit (y = x)")
+                    ax_par.set_xlabel("Actual Simulated Temp (°C)", color=MUTED, fontsize=8)
+                    ax_par.set_ylabel("Predicted Temp (°C)", color=MUTED, fontsize=8)
+                    ax_par.set_title(f"Parity Plot: {best_name} (R² = {best_d['r2']:.4f})", color=TEXT_CLR, fontsize=10, fontweight="bold")
+                    ax_par.legend(facecolor=CARD, edgecolor=BORDER, labelcolor=TEXT_CLR, fontsize=7)
+                    fig_par.tight_layout(pad=1.2)
+                    st.pyplot(fig_par, use_container_width=True)
+                    plt.close(fig_par)
+
+            with col_m2:
+                st.markdown(f"""
+                <div class="report-card">
+                    <div class="report-title">🏆 Optimal Model: {best_name}</div>
+                    <div style="font-size:0.8rem; color:{MUTED}; line-height:1.7;">
+                        • <b>Cross-Validation:</b> 5-Fold Stratified K-Fold<br>
+                        • <b>Mean Abs Error (MAE):</b> <span style="color:{GREEN}; font-weight:700;">{metrics[best_name]['mae']:.4f}°C</span><br>
+                        • <b>Root Mean Sq Err (RMSE):</b> <span style="color:{GREEN}; font-weight:700;">{metrics[best_name]['rmse']:.4f}°C</span><br>
+                        • <b>Coefficient of Det (R²):</b> <span style="color:{CYAN}; font-weight:700;">{metrics[best_name]['r2']:.4f}</span><br>
+                        • <b>Residual Mean Error:</b> {metrics[best_name]['residuals_mean']:.5f}°C
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                feat_imp = metrics.get(best_name, {}).get("feature_importances", {})
+                if feat_imp:
+                    st.markdown(f'<div class="section-header">⚖️ Feature Importance Attribution</div>', unsafe_allow_html=True)
+                    df_imp = pd.DataFrame({
+                        "Feature": list(feat_imp.keys()),
+                        "Relative Weight (%)": [round(v * 100, 2) for v in feat_imp.values()]
+                    }).sort_values("Relative Weight (%)", ascending=False)
+                    st.dataframe(df_imp, use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.warning(f"Run `python3 train_model.py` to compile academic cross-validation metrics. ({e})")
+
+    # ── Tab 7: Architecture & Guide ───────────────────────────────
     with tab_guide:
         st.markdown(f'<div class="section-header">📖 Embedded System Architecture & Theory</div>', unsafe_allow_html=True)
         st.markdown(f"""
